@@ -17,6 +17,8 @@ class Rules_Map {
 		automaton = new HashMap<>();
 		addTransition ("CC-[0-9]+", "(PRP-[0-9]+, VB.-[0-9]+)|(VB.-[0-9]+, PRP-[0-9]+)", ',');
 		addTransition ("IN-[0-9]+", "(PRP-[0-9]+, VB.-[0-9]+)|(VB.-[0-9]+, PRP-[0-9]+)", ',');
+		addTransition ("RB-[0-9]+", "(PRP-[0-9]+, VB.-[0-9]+)|(VB.-[0-9]+, PRP-[0-9]+)", ',');
+
 	}
 
 /***************************************************************************************************************/
@@ -53,9 +55,11 @@ class Rules_Map {
 	 * 			and Character, representing the period punctuation mark 
 	 * 
 	 */
-	ArrayList<Pair<Integer, Character>> findMatchingKeysPeriodSent (Sentence sent) {
-
+	ArrayList<Pair<Integer, Character>> findMatchingKeysPeriodSent (Sentence sent, int startPos) {
+		
 		String dependencies = sent.dependencyGraph().toDotFormat();
+		IO.println (dependencies);
+		
 		var split = dependencies.split(";");
 		
 		ArrayList<Pair<Integer, Character>> info = new ArrayList<>();
@@ -67,7 +71,7 @@ class Rules_Map {
 				int endPos = SecondHalfOfString.indexOf("[");
 				
 				int numInSentence = Integer.parseInt(SecondHalfOfString.substring(0, endPos - 1)) - 2;
-				int positionToInsertPeriod = sent.tokens().get(numInSentence).beginPosition();
+				int positionToInsertPeriod = sent.tokens().get(numInSentence).beginPosition() + startPos;
 				
 				info.add (new Pair<>(positionToInsertPeriod, '.'));
 
@@ -94,10 +98,10 @@ class Rules_Map {
 	 * 			and Character, representing the period punctuation mark 
 	 * 
 	 */
-	  ArrayList<Pair<Integer, Character>> findMatchingKeysCommaSent (Sentence sent) {
+	  ArrayList<Pair<Integer, Character>> findMatchingKeysCommaSent (Sentence sent, int startPos) {
 
 			List<CoreLabel> list = sent.parse().taggedLabeledYield();
-
+			
 			ArrayList<Pair<Integer, Character>> info = new ArrayList<>();
 			
 			for (int i = 0; i < list.size() - 2; i++) {
@@ -107,7 +111,7 @@ class Rules_Map {
 					int numInSentence = posAndChar.first();
 					Character punc = posAndChar.second();
 					
-					int positionToInsertComma = sent.tokens().get(numInSentence).beginPosition();
+					int positionToInsertComma = sent.tokens().get(numInSentence).beginPosition() + startPos;
 
 					info.add(new Pair<>(positionToInsertComma, punc));
 				}
