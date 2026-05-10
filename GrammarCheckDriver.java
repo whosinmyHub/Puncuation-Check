@@ -1,4 +1,3 @@
-
 import java.io.BufferedReader;
 import java.io.File;
 
@@ -8,6 +7,7 @@ import java.io.Reader;
 import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,7 +21,7 @@ class GrammarCheckDriver {
 	private AtomicInteger reverse;
 	private ExecutorService execPunc;
 	private ExecutorService execSent;
-	private ConcurrentLinkedQueue<Pair<Integer, Character>> puncErrors;
+	private ConcurrentSkipListMap<Integer, Character> puncErrors;
 	private Rules_Map rules;
 	
 	GrammarCheckDriver () {
@@ -29,7 +29,7 @@ class GrammarCheckDriver {
 		inputText = new StringBuffer ();
 		reverse = new AtomicInteger(1);
 		
-		puncErrors = new ConcurrentLinkedQueue<>();
+		puncErrors = new ConcurrentSkipListMap<>();
 		rules = new Rules_Map ();
 		execPunc = Executors.newVirtualThreadPerTaskExecutor();
 		execSent = Executors.newVirtualThreadPerTaskExecutor();
@@ -42,7 +42,7 @@ class GrammarCheckDriver {
 /***************************************************************************************************************/
 	
 	/*
-	 * insertQueue : inserts all punctuation errors into the Concurrent Linked Queue 
+	 * insertQueue : inserts all punctuation errors into the Concurrent Skip List Map, a thread-safe map that maintains the order of the keys 
 	 * 
 	 * parameters:
 	 * err	: an ArrayList of Pairs of an Integer, representing the position to insert the char, and 
@@ -50,8 +50,8 @@ class GrammarCheckDriver {
 	 * 
 	 */
 	private void insertQueue (ArrayList<Pair<Integer, Character>> err) {
-		for (Pair<Integer, Character> p : err) 
-			puncErrors.add(p);
+		for (Pair<Integer, Character> p : err)  
+			puncErrors.put(p.first(), p.second());
 	}
 
   
@@ -72,42 +72,37 @@ class GrammarCheckDriver {
     private void puncCheck (Sentence sent, int startPos) {
 
     	var period = CompletableFuture
-				.supplyAsync (() -> { return rules.findMatchingKeysPeriodSent(sent); }, execPunc)
-				.thenAccept(result -> { insertQueue (result); })
-				.thenAccept(voidRes -> { insertPunc (startPos); })
-				.exceptionally(ex -> { ex.printStackTrace(); return null; });   					
+				.supplyAsync (
+						() -> { return rules.findMatchingKeysPeriodSent(sent, startPos); }, execPunc)
+				.thenAccept(
+						result -> { insertQueue (result); })
+				.exceptionally(
+						ex -> { ex.printStackTrace(); return null; });   					
 				
 		
 		var comma = CompletableFuture
-				.supplyAsync (() -> { return rules.findMatchingKeysCommaSent(sent); }, execPunc)
-				.thenAccept(result -> { insertQueue (result); })
-				.thenAccept(voidRes -> { insertPunc (startPos); })
-				.exceptionally(ex -> { ex.printStackTrace(); return null; });   					
-
-		
+				.supplyAsync (
+						() -> { return rules.findMatchingKeysCommaSent(sent, startPos); }, execPunc)
+				.thenAccept(
+						result -> { insertQueue (result); })
+				.exceptionally(
+						ex -> { ex.printStackTrace(); return null; });   	
 		
 		CompletableFuture.allOf(period, comma).join();
+
     }
  
 /***************************************************************************************************************/
 
     /*
-	 * insertPunc : grabs the head of the queue holding the punctuation errors
-	 * 				 and inserts the punctuation char in the correct spot 
-	 * 
-	 * parameters:
-	 * startPos	: the original starting postition in the StringBuffer for the sentence being corrected
+	 * insertPunc : reverses the order of the map's keys and inserts the punctuation  
 	 * 
 	 */
-	private void insertPunc (int startPos) {
-    	
-    	Pair<Integer, Character> pair = puncErrors.poll();
+	private void insertPunc () {
+		
+		for (var p : puncErrors.descendingMap().entrySet())
+			inputText.insert(p.getKey().intValue() - 1, p.getValue());
 
-    	if (pair != null) {
-	    	
-	    	inputText.insert(pair.first() - reverse.intValue() + startPos, pair.second());
-	    	reverse.decrementAndGet();
-	    	}
     }
    
 /***************************************************************************************************************/
@@ -123,38 +118,34 @@ class GrammarCheckDriver {
 	 */
 	private void readText () {
 		
-		
 		try (Reader reader = new BufferedReader (new FileReader (new File ("Input.txt")))) {
 			
 			int startPos = 0;
 			int endPos = 0;
-			int readChar = reader.read ();
+			int readChar;
 			
-			while (readChar != -1 ) {
+			while ((readChar = reader.read ()) != -1 ) {
 
-				while ((char) readChar != '.' && readChar != -1) {
-					inputText.append((char) readChar); 
+				char c = (char) readChar;
+				inputText.append(c);
+				++endPos;
+				
+				if (c == '.') {
+					Sentence sent = new Sentence (inputText.substring(startPos, endPos));
+					int originalSentStart = startPos;
+
+					CompletableFuture.runAsync (
+							() -> puncCheck (sent, originalSentStart), execSent)
+					.exceptionally(
+							ex -> { ex.printStackTrace(); return null;});
 					
-					endPos++;
-					readChar = reader.read();
-				}
-				
-				inputText.append((char) readChar); 
-				
-				String text = inputText.substring(startPos, endPos).toString();
-				Sentence sent = new Sentence (text);
-				
-				reader.read ();
-				int originalSentStart = startPos;
-				CompletableFuture.runAsync (() -> puncCheck (sent, originalSentStart), execSent);
-
-				startPos = endPos;
-				readChar = reader.read();
+					startPos = endPos;
 
 				}
+			}
 			
 			execSent.close();
-			reader.close();
+			insertPunc ();
 
 						
 		}  catch (IOException e1) {
