@@ -1,3 +1,4 @@
+
 import java.io.BufferedReader;
 import java.io.File;
 
@@ -89,6 +90,7 @@ class GrammarCheckDriver {
 						ex -> { ex.printStackTrace(); return null; });   	
 		
 		CompletableFuture.allOf(period, comma).join();
+
 
     }
  
